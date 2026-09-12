@@ -40,18 +40,21 @@ jobs:
       # pushes nothing". `cachix push` over the realised closure uploads every
       # path (skipping any the cache already holds), so trynix finds the entire
       # demo closure on foyer.cachix.org.
+      #
+      # The no-token case (fork PRs) is guarded in bash, not a step `if:` — the
+      # `secrets` context is not available in `if:` expressions, only in `with:`
+      # and `env:`. So the token rides in via env and the shell decides.
       - name: Build and push foyer packages
-        if: ${{ secrets.CACHIX_AUTH_TOKEN != '' }}
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
         run: |
           set -euo pipefail
           nix build -L .#foyer .#foyer-demo
-          nix path-info -r .#foyer .#foyer-demo \
-            | cachix push "${CACHIX_CACHE}"
-
-      # Fork PRs (no token): build only, so CI still checks the packages compile.
-      - name: Build foyer packages (no push)
-        if: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
-        run: nix build -L .#foyer .#foyer-demo
+          if [ -n "${CACHIX_AUTH_TOKEN}" ]; then
+            nix path-info -r .#foyer .#foyer-demo | cachix push "${CACHIX_CACHE}"
+          else
+            echo "no CACHIX_AUTH_TOKEN (fork PR?); built without pushing"
+          fi
 
       # Print the demo store path so the trynix ?path= link can be updated when
       # the closure hash changes (any source or flake.lock change rebuilds it).
