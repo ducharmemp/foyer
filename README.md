@@ -1,12 +1,9 @@
 # foyer
 
 `foyer create <name>` runs `jj workspace add`, then runs the new workspace's
-`.foyer/setup.sh` if it has one. It exists so that creating a workspace and
-getting it ready to work in are one command instead of two.
+`.foyer/setup.sh` if it has one. Meant to canonicalize standard setup for things so automated tooling and agents can get going without having to encode a skill or some other terrible solution.
 
-The name follows [open-floorplan.nvim](https://github.com/ducharmemp/open-floorplan.nvim),
-where a repo is a floorplan and a workspace is a room. foyer is what you walk
-through on the way in.
+If you like jj workspaces and work in neovim, try [open-floorplan.nvim](https://github.com/ducharmemp/open-floorplan.nvim). Foyer support coming soon.
 
 ## Try it in your browser
 
@@ -20,12 +17,11 @@ through on the way in.
      The key's + and / are percent-encoded (%2B, %2F) because trynix parses
      the query with URLSearchParams, which would otherwise turn + into a
      space and drop the cache. -->
-[**Run foyer in your browser, no install →**](https://trynix.dev/?path=/nix/store/as5lasfkj7z5wbkz4rg7qmpll0x95p6k-foyer-demo&cache=https://foyer.cachix.org%20foyer.cachix.org-1:xsCXcKqEATnlu%2BHrpG9CLZE6vaY0IS0kZLApVU3Q%2Fgk=)
+[**Run foyer in your browser**](https://trynix.dev/?path=/nix/store/as5lasfkj7z5wbkz4rg7qmpll0x95p6k-foyer-demo&cache=https://foyer.cachix.org%20foyer.cachix.org-1:xsCXcKqEATnlu%2BHrpG9CLZE6vaY0IS0kZLApVU3Q%2Fgk=)
 
 The link opens [trynix.dev](https://trynix.dev), which boots a small Linux VM
 in the browser tab — [QEMU compiled to
-WebAssembly](https://github.com/ktock/qemu-wasm), with foyer's closure fetched
-from [foyer.cachix.org](https://foyer.cachix.org). No server, no install. At the
+WebAssembly](https://github.com/ktock/qemu-wasm). At the
 shell prompt, run:
 
 ```
@@ -55,9 +51,7 @@ foyer remove <name> [--to <dir>]
 Run either directly, or as `jj foyer create <name>` — the home-manager module
 installs that alias.
 
-foyer requires `jj` on `PATH`: it drives jujutsu, it does not vendor it (the
-`jj foyer` alias and any direct use run from an environment that already has
-jj).
+foyer requires `jj` on `PATH`.
 
 ## The setup script
 
@@ -71,19 +65,15 @@ activates the environment:
 direnv allow
 ```
 
-The script has to be committed. `jj workspace add` populates the new workspace
-from the parent revision, so a script you have not committed yet won't be there
-to run. This is deliberate: the setup that runs matches the revision checked
-out, and it changes alongside the code that needs it.
+The script has to be committed.
 
 ## The teardown script
 
 `foyer remove <name>` is the reverse of `create`. It runs `jj workspace forget
 <name>` first, then, if the directory holds an executable `.foyer/teardown.sh`,
-runs it there with `JJ_WORKSPACE_ROOT` set — same contract as setup.
+runs it there with `JJ_WORKSPACE_ROOT` set.
 
-The order matters. jj forgets the workspace before teardown runs, so the
-directory is already untracked. A teardown script can therefore clean up
+Because we forget the workspace first, A teardown script can clean up
 freely, including deleting its own directory:
 
 ```bash
@@ -92,9 +82,7 @@ freely, including deleting its own directory:
 rm -rf "$JJ_WORKSPACE_ROOT"    # self-removal, if you want it
 ```
 
-foyer itself never deletes files. Without a teardown script, `remove` just
-forgets the workspace and leaves the directory on disk (matching `jj workspace
-forget`). Whether the directory survives is the script's decision.
+foyer itself never deletes files.
 
 ## Install
 
@@ -114,8 +102,7 @@ jj config.
 ### Download a binary
 
 Each release attaches self-contained binaries for Linux (x86_64, aarch64) and
-macOS (Apple Silicon). They bundle the Erlang runtime, so nothing else needs to
-be installed.
+macOS (Apple Silicon). 
 
 ```sh
 curl -LO https://github.com/ducharmemp/foyer/releases/latest/download/foyer-linux_amd64
@@ -140,8 +127,7 @@ nix build .#foyer  # the escript
 nix flake check    # tests in the sandbox
 ```
 
-Release binaries are built by `scripts/build-release.sh`, which the GitHub
-Actions release workflow only orchestrates — you can run it locally. It needs
+Release binaries are built by `scripts/build-release.sh` if needed. It needs
 Elixir/Erlang, Zig and xz. The Erlang OTP version must be one Burrito publishes
 precompiled ERTS for (the CI workflow pins it); see `scripts/build-release.sh`
 and `.github/workflows/release.yml`.
