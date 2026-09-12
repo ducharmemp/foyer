@@ -15,3 +15,7 @@ erl_crash.dump
 # Nix
 /result
 /result-*
+
+# Release build outputs (Burrito payloads + collected artifacts)
+/burrito_out/
+/dist/

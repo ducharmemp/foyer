@@ -24,6 +24,10 @@ foyer create <name> [options]
 Run it directly, or as `jj foyer create <name>` — the home-manager module
 installs that alias.
 
+foyer requires `jj` on `PATH`: it drives jujutsu, it does not vendor it (the
+`jj foyer` alias and any direct use run from an environment that already has
+jj).
+
 ## The setup script
 
 If the new workspace contains an executable `.foyer/setup.sh`, foyer runs it

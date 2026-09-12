@@ -39,6 +39,13 @@
         let
           beam = beamFor pkgs;
           elixir = elixirFor pkgs;
+          # The escript's RUNTIME erlang. Default nixpkgs erlang builds with the
+          # wx/observer GUI, dragging wxwidgets + webkitgtk + gtk into the
+          # closure (~1.1 GiB). A CLI escript needs none of that, so the wrapper
+          # points at the minimal BEAM erlang (~190 MiB). The build toolchain
+          # above stays full; only what the shipped binary references at run time
+          # is trimmed.
+          runtimeErlang = pkgs.beam_minimal.interpreters.erlang;
         in
         beam.mixRelease {
           pname = "foyer";
@@ -52,8 +59,13 @@
           ];
 
           # mixRelease expects a Phoenix-style OTP release. foyer is a CLI, so we
-          # override the build/install to produce an escript and wrap it so `jj`
-          # (the runtime dependency it shells out to) is always on PATH.
+          # override the build/install to produce an escript and wrap it with the
+          # Erlang runtime it needs on PATH.
+          #
+          # `jj` is deliberately NOT bundled: foyer shells out to jj, but jj is
+          # foyer's caller (the `jj foyer …` alias) and the user's own VCS — it
+          # is expected on PATH already, like grep or bash. Vendoring it would
+          # invert the dependency direction and bloat the closure by ~76 MiB.
           #
           # Built in the dev env on purpose: the escript needs no dependencies,
           # while :prod pulls in Burrito (the release-only dep). Keeping this
@@ -71,7 +83,8 @@
             mkdir -p "$out/bin"
             install -Dm755 foyer "$out/libexec/foyer"
             makeWrapper "$out/libexec/foyer" "$out/bin/foyer" \
-              --prefix PATH : ${pkgs.lib.makeBinPath [ beam.erlang pkgs.jujutsu pkgs.bash ]}
+              --prefix PATH : ${pkgs.lib.makeBinPath [ runtimeErlang pkgs.bash ]} \
+              --set-default LC_ALL C.UTF-8
             runHook postInstall
           '';
 
