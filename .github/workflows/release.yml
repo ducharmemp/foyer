@@ -19,32 +19,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Toolchain for scripts/build-release.sh: Elixir/Erlang, Zig, xz. Burrito
-      # cross-compiles the Linux and macOS targets from a single Linux host.
-      #
-      # Burrito derives its ERTS download URL from the BUILD host's exact OTP
-      # version (it reads releases/<rel>/OTP_VERSION), then fetches a matching
-      # precompiled build from https://beam-machine-universal.b-cdn.net. That CDN
-      # publishes only specific versions: in the 28.2 line, exactly "28.2" exists
-      # (28.2.1 / 28.2.2 return 404), for all three targets foyer builds. So the
-      # OTP version is pinned exactly, with version-type: strict, so setup-beam
-      # installs 28.2 and not "the newest 28.2.x" — a mismatch would 404 the ERTS
-      # fetch. When bumping OTP, first confirm the target exists on that CDN.
-      - uses: erlef/setup-beam@v1
-        with:
-          otp-version: "28.2"
-          version-type: strict
-          elixir-version: "1.18"
-
-      - uses: mlugg/setup-zig@v2
-        with:
-          version: 0.15.2
-
-      - name: Install xz
-        run: sudo apt-get update && sudo apt-get install -y xz-utils
+      # The whole release toolchain — exact OTP (28.2, the version Burrito
+      # publishes precompiled ERTS for), Elixir, zig 0.16 (Burrito requires it
+      # exactly), xz — comes from the flake's `release` devShell, the same one
+      # a developer uses locally. Nix is the single source of truth for versions,
+      # so what CI installs cannot drift from what the build needs. See flake.nix
+      # (devShells.release) and scripts/build-release.sh.
+      - uses: cachix/install-nix-action@v31
 
       - name: Build release binaries
-        run: scripts/build-release.sh
+        run: nix develop .#release --command scripts/build-release.sh
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

@@ -1,10 +1,19 @@
 {
   description = "foyer — furnish a jj workspace on arrival";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+
+    # Exact-version package source. Burrito needs an OTP version it publishes
+    # precompiled ERTS for (see the release shell below); nixpkgs only ships the
+    # latest patch. The multiverse serves any historical version, pinned in
+    # multiverse.lock, and its fast path substitutes the prebuilt store path
+    # from cache.nixos.org instead of building.
+    multiverse.url = "github:fzakaria/nixpkgs-multiverse";
+  };
 
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, multiverse }:
     let
       systems = [
         "x86_64-linux"
@@ -13,6 +22,9 @@
         "aarch64-darwin"
       ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      # Variant that also passes the system string, for outputs that need to
+      # reach into the multiverse's per-system attrs (the release devShell).
+      forAllSystems' = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system} system);
 
       # One BEAM toolchain, used by the package, the devShell and the checks, so
       # every entry point builds against the same Elixir/Erlang pair.
@@ -172,28 +184,66 @@
           };
       });
 
-      devShells = forAllSystems (pkgs: {
-        default = pkgs.mkShell {
-          packages = [
-            (elixirFor pkgs)
-            (beamFor pkgs).erlang
-            (beamFor pkgs).elixir-ls
-            pkgs.jujutsu
-            # For scripts/build-release.sh (Burrito): zig cross-compiles the
-            # wrapper, xz packs the payload.
-            pkgs.zig
-            pkgs.xz
-          ];
+      devShells = forAllSystems' (
+        pkgs: system:
+        let
+          # Burrito 1.6 requires EXACTLY zig 0.16.0 (strict equality). Pin the
+          # explicit attr so a nixpkgs bump of the default `zig` cannot drift off
+          # what Burrito demands.
+          zig = pkgs.zig_0_16;
 
-          # Keep mix's caches inside the project so a devShell never writes to
-          # the user's global ~/.mix / ~/.hex.
-          shellHook = ''
-            export MIX_HOME="$PWD/.nix-mix"
-            export HEX_HOME="$PWD/.nix-hex"
-            mkdir -p "$MIX_HOME" "$HEX_HOME"
-            export PATH="$MIX_HOME/bin:$HEX_HOME/bin:$PATH"
-          '';
-        };
-      });
+          # Exact OTP + Elixir from the multiverse. OTP 28.2 is the version
+          # Burrito publishes precompiled ERTS for. `mv.version` resolves a
+          # package at the revision that shipped it; nothing is built for a
+          # version whose store path is already in cache.nixos.org.
+          mv = multiverse.multiverse.${system};
+          releaseErlang = mv.version "erlang" "28.2";
+          releaseElixir = mv.version "elixir" "1.18.4";
+        in
+        {
+          default = pkgs.mkShell {
+            packages = [
+              (elixirFor pkgs)
+              (beamFor pkgs).erlang
+              (beamFor pkgs).elixir-ls
+              pkgs.jujutsu
+              # For scripts/build-release.sh (Burrito): zig cross-compiles the
+              # wrapper, xz packs the payload.
+              zig
+              pkgs.xz
+            ];
+
+            # Keep mix's caches inside the project so a devShell never writes to
+            # the user's global ~/.mix / ~/.hex.
+            shellHook = ''
+              export MIX_HOME="$PWD/.nix-mix"
+              export HEX_HOME="$PWD/.nix-hex"
+              mkdir -p "$MIX_HOME" "$HEX_HOME"
+              export PATH="$MIX_HOME/bin:$HEX_HOME/bin:$PATH"
+            '';
+          };
+
+          # The release toolchain, one source of truth for scripts/build-release.sh.
+          # CI runs `nix develop .#release -c scripts/build-release.sh`, so the
+          # exact OTP (28.2, Burrito-published), Elixir, zig 0.16 and xz all come
+          # from here — they cannot drift from what the build needs the way an
+          # ad-hoc setup-beam/setup-zig pin did.
+          release = pkgs.mkShell {
+            packages = [
+              releaseErlang
+              releaseElixir
+              zig
+              pkgs.xz
+            ];
+
+            shellHook = ''
+              export MIX_HOME="$PWD/.nix-mix"
+              export HEX_HOME="$PWD/.nix-hex"
+              mkdir -p "$MIX_HOME" "$HEX_HOME"
+              export PATH="$MIX_HOME/bin:$HEX_HOME/bin:$PATH"
+            '';
+          };
+        }
+      );
     };
 }
