@@ -37,7 +37,10 @@ are already on `PATH`, so you can keep going by hand afterwards.
 
 ```
 foyer create <name> [options]
+foyer remove <name> [--to <dir>]
 ```
+
+`create` options:
 
 | option           | effect                                          |
 | ---------------- | ----------------------------------------------- |
@@ -46,7 +49,7 @@ foyer create <name> [options]
 | `-m <message>`   | description for the new working-copy commit     |
 | `--no-furnish`   | create the workspace, skip `.foyer/setup.sh`    |
 
-Run it directly, or as `jj foyer create <name>` — the home-manager module
+Run either directly, or as `jj foyer create <name>` — the home-manager module
 installs that alias.
 
 foyer requires `jj` on `PATH`: it drives jujutsu, it does not vendor it (the
@@ -69,6 +72,26 @@ The script has to be committed. `jj workspace add` populates the new workspace
 from the parent revision, so a script you have not committed yet won't be there
 to run. This is deliberate: the setup that runs matches the revision checked
 out, and it changes alongside the code that needs it.
+
+## The teardown script
+
+`foyer remove <name>` is the reverse of `create`. It runs `jj workspace forget
+<name>` first, then, if the directory holds an executable `.foyer/teardown.sh`,
+runs it there with `JJ_WORKSPACE_ROOT` set — same contract as setup.
+
+The order matters. jj forgets the workspace before teardown runs, so the
+directory is already untracked. A teardown script can therefore clean up
+freely, including deleting its own directory:
+
+```bash
+#!/usr/bin/env bash
+# .foyer/teardown.sh
+rm -rf "$JJ_WORKSPACE_ROOT"    # self-removal, if you want it
+```
+
+foyer itself never deletes files. Without a teardown script, `remove` just
+forgets the workspace and leaves the directory on disk (matching `jj workspace
+forget`). Whether the directory survives is the script's decision.
 
 ## Install
 

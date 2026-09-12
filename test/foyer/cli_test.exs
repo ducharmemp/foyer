@@ -152,4 +152,83 @@ defmodule Foyer.CLITest do
       assert out =~ "skipped (--no-furnish)"
     end
   end
+
+  describe "remove parsing" do
+    test "missing name is an error" do
+      FakeRunner.start()
+      assert {:error, out} = CLI.run(["remove"], FakeRunner)
+      assert out =~ "requires a workspace name"
+    end
+
+    test "more than one positional is an error" do
+      FakeRunner.start()
+      assert {:error, out} = CLI.run(["remove", "a", "b"], FakeRunner)
+      assert out =~ "takes one name"
+    end
+
+    test "unknown option is reported" do
+      FakeRunner.start()
+      assert {:error, out} = CLI.run(["remove", "feat", "--rev", "@"], FakeRunner)
+      assert out =~ "unknown option"
+    end
+  end
+
+  describe "remove output rendering" do
+    test "reports the teardown result and forgets via the resolved directory" do
+      System.put_env("JJ_WORKSPACE_ROOT", "/repo")
+      script = "/repo-feat/.foyer/teardown.sh"
+
+      FakeRunner.start(
+        files: [script],
+        results: %{{"bash", [script]} => {:ok, ""}}
+      )
+
+      assert {:ok, out} = CLI.run(["remove", "feat"], FakeRunner)
+      assert out =~ "forgot workspace 'feat'"
+      assert out =~ "ran .foyer/teardown.sh"
+
+      # forget precedes teardown
+      assert [{"jj", ["workspace", "forget", "feat"], _}, {"bash", [^script], _}] =
+               FakeRunner.calls()
+    end
+
+    test "reports nothing-to-do when no teardown script exists" do
+      System.put_env("JJ_WORKSPACE_ROOT", "/repo")
+      FakeRunner.start()
+
+      assert {:ok, out} = CLI.run(["remove", "feat"], FakeRunner)
+      assert out =~ "forgot workspace 'feat'"
+      assert out =~ "nothing to do (no .foyer/teardown.sh)"
+    end
+
+    test "surfaces a failed teardown script as a warning" do
+      System.put_env("JJ_WORKSPACE_ROOT", "/repo")
+      script = "/repo-feat/.foyer/teardown.sh"
+
+      FakeRunner.start(
+        files: [script],
+        results: %{{"bash", [script]} => {:error, {3, "cleanup exploded"}}}
+      )
+
+      assert {:ok, out} = CLI.run(["remove", "feat"], FakeRunner)
+      assert out =~ "WARNING"
+      assert out =~ "cleanup exploded"
+    end
+
+    test "honors --to for the directory the teardown runs in" do
+      System.put_env("JJ_WORKSPACE_ROOT", "/repo")
+      script = "/custom/.foyer/teardown.sh"
+
+      FakeRunner.start(
+        files: [script],
+        results: %{{"bash", [script]} => {:ok, ""}}
+      )
+
+      assert {:ok, _} = CLI.run(["remove", "feat", "--to", "/custom"], FakeRunner)
+
+      assert {"bash", [^script], opts} = List.last(FakeRunner.calls())
+      assert opts[:cd] == "/custom"
+      assert opts[:env] == [{"JJ_WORKSPACE_ROOT", "/custom"}]
+    end
+  end
 end

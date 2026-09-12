@@ -19,6 +19,7 @@ defmodule Foyer.Workspace do
         }
 
   @setup_rel ".foyer/setup.sh"
+  @teardown_rel ".foyer/teardown.sh"
 
   @doc """
   Create a workspace and furnish it.
@@ -48,6 +49,32 @@ defmodule Foyer.Workspace do
   end
 
   def create(_runner, _opts), do: {:error, "workspace name is required"}
+
+  @doc """
+  Remove a workspace: `jj workspace forget`, then run its teardown.
+
+  The order is deliberate. jj forgets the workspace first, so by the time
+  `.foyer/teardown.sh` runs the directory is no longer a tracked workspace. A
+  teardown script can therefore clean up freely — including deleting its own
+  directory (`rm -rf "$JJ_WORKSPACE_ROOT"`) for self-removal — without leaving
+  jj tracking a path that is gone. foyer itself never deletes files; whether the
+  directory survives is the script's decision.
+
+  Returns `{:ok, %{name: name, directory: dir, teardown: status}}` or
+  `{:error, reason}`. teardown status is `:ok`, `:none`, `:skipped`, or
+  `{:failed, message}`.
+  """
+  @spec remove(module(), opts()) :: {:ok, map()} | {:error, String.t()}
+  def remove(runner, %{name: name} = opts) when is_binary(name) and name != "" do
+    directory = resolve_destination(opts)
+
+    with :ok <- forget_workspace(runner, name) do
+      teardown = teardown(runner, directory, opts)
+      {:ok, %{name: name, directory: directory, teardown: teardown}}
+    end
+  end
+
+  def remove(_runner, _opts), do: {:error, "workspace name is required"}
 
   @doc """
   The argument list foyer passes to `jj workspace add`. Public so tests can
@@ -90,6 +117,15 @@ defmodule Foyer.Workspace do
     end
   end
 
+  # Run `jj workspace forget <name>`, mapping a non-zero exit to a readable
+  # error. Runs before teardown so the directory is untracked when it runs.
+  defp forget_workspace(runner, name) do
+    case runner.run("jj", ["workspace", "forget", name], []) do
+      {:ok, _output} -> :ok
+      {:error, {_code, output}} -> {:error, "jj workspace forget failed: #{String.trim(output)}"}
+    end
+  end
+
   # Furnish the new room. If the project committed a `.foyer/setup.sh`, run it
   # with cwd = the new workspace and JJ_WORKSPACE_ROOT exported, exactly as jj
   # sets it for a `util exec` alias. Returns one of:
@@ -110,6 +146,34 @@ defmodule Foyer.Workspace do
       env = [{"JJ_WORKSPACE_ROOT", destination}]
 
       case runner.run("bash", [script], cd: destination, env: env) do
+        {:ok, _} -> :ok
+        {:error, {_code, output}} -> {:failed, String.trim(output)}
+      end
+    else
+      :none
+    end
+  end
+
+  # Tear down a removed workspace. jj has already forgotten it, so the directory
+  # is untracked when this runs. If the (now-untracked) directory still holds an
+  # executable `.foyer/teardown.sh`, run it with cwd = that directory and
+  # JJ_WORKSPACE_ROOT set to it, mirroring the furnish contract. Returns:
+  #
+  #   :none           — no directory could be resolved, or no teardown script
+  #   :ok             — the teardown script ran and succeeded
+  #   {:failed, msg}  — the teardown script ran and failed (reported)
+  #
+  # A teardown script may delete its own directory (self-removal); foyer never
+  # deletes files itself.
+  defp teardown(_runner, nil, _opts), do: :none
+
+  defp teardown(runner, directory, _opts) do
+    script = Path.join(directory, @teardown_rel)
+
+    if runner.file?(script) do
+      env = [{"JJ_WORKSPACE_ROOT", directory}]
+
+      case runner.run("bash", [script], cd: directory, env: env) do
         {:ok, _} -> :ok
         {:error, {_code, output}} -> {:failed, String.trim(output)}
       end

@@ -160,4 +160,102 @@ defmodule Foyer.WorkspaceTest do
       refute Enum.any?(FakeRunner.calls(), fn {cmd, _, _} -> cmd == "bash" end)
     end
   end
+
+  describe "remove/2 name validation" do
+    test "empty name is rejected" do
+      FakeRunner.start()
+      assert {:error, "workspace name is required"} = Workspace.remove(FakeRunner, %{name: ""})
+    end
+
+    test "missing name is rejected" do
+      FakeRunner.start()
+      assert {:error, "workspace name is required"} = Workspace.remove(FakeRunner, %{})
+    end
+  end
+
+  describe "remove/2 forget-then-teardown order" do
+    test "forgets the workspace BEFORE running teardown" do
+      script = "/dest/.foyer/teardown.sh"
+
+      FakeRunner.start(
+        files: [script],
+        results: %{{"bash", [script]} => {:ok, "bye"}}
+      )
+
+      assert {:ok, %{name: "feat", directory: "/dest", teardown: :ok}} =
+               Workspace.remove(FakeRunner, %{name: "feat", destination: "/dest"})
+
+      # order is load-bearing: jj forget must precede the teardown bash call so
+      # the directory is untracked (and self-deletable) when teardown runs.
+      calls = FakeRunner.calls()
+      assert [{"jj", ["workspace", "forget", "feat"], _}, {"bash", [^script], _}] = calls
+    end
+
+    test "teardown runs with cwd and JJ_WORKSPACE_ROOT set to the directory" do
+      script = "/dest/.foyer/teardown.sh"
+
+      FakeRunner.start(
+        files: [script],
+        results: %{{"bash", [script]} => {:ok, "ok"}}
+      )
+
+      assert {:ok, %{teardown: :ok}} =
+               Workspace.remove(FakeRunner, %{name: "feat", destination: "/dest"})
+
+      assert {"bash", [^script], opts} = List.last(FakeRunner.calls())
+      assert opts[:cd] == "/dest"
+      assert opts[:env] == [{"JJ_WORKSPACE_ROOT", "/dest"}]
+    end
+  end
+
+  describe "remove/2 teardown outcomes" do
+    test "reports :none when no teardown script exists" do
+      FakeRunner.start()
+
+      assert {:ok, %{teardown: :none}} =
+               Workspace.remove(FakeRunner, %{name: "feat", destination: "/dest"})
+
+      # forget still ran
+      assert [{"jj", ["workspace", "forget", "feat"], _}] = FakeRunner.calls()
+    end
+
+    test "reports :none when the directory cannot be resolved, but still forgets" do
+      FakeRunner.start()
+
+      assert {:ok, %{directory: nil, teardown: :none}} =
+               Workspace.remove(FakeRunner, %{name: "feat"})
+
+      assert [{"jj", ["workspace", "forget", "feat"], _}] = FakeRunner.calls()
+    end
+
+    test "reports {:failed, msg} when teardown fails, workspace is still forgotten" do
+      script = "/dest/.foyer/teardown.sh"
+
+      FakeRunner.start(
+        files: [script],
+        results: %{{"bash", [script]} => {:error, {1, "boom\n"}}}
+      )
+
+      assert {:ok, %{name: "feat", teardown: {:failed, "boom"}}} =
+               Workspace.remove(FakeRunner, %{name: "feat", destination: "/dest"})
+    end
+  end
+
+  describe "remove/2 jj failure" do
+    test "a failed forget aborts and never runs teardown" do
+      script = "/dest/.foyer/teardown.sh"
+
+      FakeRunner.start(
+        files: [script],
+        results: %{{"jj", ["workspace", "forget", "feat"]} => {:error, {1, "no such workspace"}}}
+      )
+
+      assert {:error, msg} =
+               Workspace.remove(FakeRunner, %{name: "feat", destination: "/dest"})
+
+      assert msg =~ "jj workspace forget failed"
+      assert msg =~ "no such workspace"
+      refute Enum.any?(FakeRunner.calls(), fn {cmd, _, _} -> cmd == "bash" end)
+    end
+  end
 end
