@@ -102,6 +102,63 @@
       packages = forAllSystems (pkgs: rec {
         foyer = mkFoyer pkgs;
         default = foyer;
+
+        # A self-contained, one-command demo for trynix.dev (or any nix run).
+        # Boot the store path in a browser VM and type `foyer-demo`: it seeds a
+        # jj repo with a committed .foyer/setup.sh, runs `foyer create`, and
+        # shows the furnished workspace. foyer + jujutsu ride in its PATH, so the
+        # closure is all the VM needs — nothing else on the command line.
+        foyer-demo = pkgs.writeShellApplication {
+          name = "foyer-demo";
+          runtimeInputs = [
+            foyer
+            pkgs.jujutsu
+            pkgs.coreutils
+          ];
+          text = ''
+            set -euo pipefail
+
+            # A fresh VM has no jj identity; set one so commits work.
+            export JJ_CONFIG="''${JJ_CONFIG:-/tmp/foyer-demo-jjconfig.toml}"
+            cat > "$JJ_CONFIG" <<'EOF'
+            [user]
+            name = "foyer demo"
+            email = "demo@foyer.example"
+            EOF
+
+            repo="''${1:-/tmp/foyer-demo}"
+            rm -rf "$repo"
+            mkdir -p "$repo"
+            cd "$repo"
+
+            echo "==> jj git init $repo"
+            jj git init >/dev/null
+
+            echo "==> writing a committed .foyer/setup.sh"
+            mkdir -p .foyer
+            cat > .foyer/setup.sh <<'EOF'
+            #!/usr/bin/env bash
+            # Runs in each NEW workspace with JJ_WORKSPACE_ROOT set.
+            echo "  furnished $(basename "$JJ_WORKSPACE_ROOT")  (from .foyer/setup.sh)"
+            EOF
+            chmod +x .foyer/setup.sh
+            jj describe -m "seed: add .foyer/setup.sh" >/dev/null
+            # The setup script must be committed to appear in a new workspace,
+            # because jj populates a new workspace from the parent revision.
+            jj new >/dev/null
+
+            echo
+            echo "==> foyer create feature-x"
+            foyer create feature-x
+            echo
+            echo "==> jj workspace list"
+            jj workspace list
+            echo
+            echo "Done. The new workspace ran .foyer/setup.sh on arrival."
+            echo "Poke around:  cd $repo  &&  foyer create another-one"
+          '';
+          meta.description = "One-command foyer demo: seed a jj repo and furnish a workspace";
+        };
       });
 
       overlays.default = final: _prev: {
