@@ -1,0 +1,46 @@
+name: Cachix
+
+# Build foyer's nix packages and push their closures to the public cache at
+# https://foyer.cachix.org, so the trynix.dev demo link (and any `nix run`)
+# fetches a ready-built closure instead of building from source.
+#
+# cachix-action installs a post-build hook: every store path `nix build`
+# realizes after this step runs is pushed to the cache automatically.
+#
+# Requires the repo secret CACHIX_AUTH_TOKEN (a write token for the `foyer`
+# cache). Fork PRs have no secret, so they build without pushing.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CACHIX_CACHE: foyer
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+
+      - uses: cachix/cachix-action@v16
+        with:
+          name: ${{ env.CACHIX_CACHE }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          # PRs from forks have no token; build without pushing.
+          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
+
+      # foyer-demo carries foyer + jujutsu in its closure, so pushing it
+      # covers the trynix demo. foyer is pushed too for `nix profile install`.
+      - name: Build and push foyer packages
+        run: nix build -L .#foyer .#foyer-demo
+
+      # Print the demo store path so the trynix link is easy to update if the
+      # closure hash changes (e.g. after a flake.lock bump).
+      - name: Report demo store path
+        run: |
+          echo "foyer-demo store path (for the trynix ?path= link):"
+          nix path-info .#foyer-demo

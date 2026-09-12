@@ -8,6 +8,31 @@ The name follows [open-floorplan.nvim](https://github.com/ducharmemp/open-floorp
 where a repo is a floorplan and a workspace is a room. foyer is what you walk
 through on the way in.
 
+## Try it in your browser
+
+<!-- The store path below is content-addressed to the current flake.lock.
+     A flake.lock bump (nixpkgs/erlang/…) changes the hash and breaks this
+     link. The Cachix workflow prints the current path on every push to main
+     ("Report demo store path"); update the ?path= here and re-push. Rebuild
+     locally with:  nix build .#foyer-demo --print-out-paths
+     The key's + and / are percent-encoded (%2B, %2F) because trynix parses
+     the query with URLSearchParams, which would otherwise turn + into a
+     space and drop the cache. -->
+[**Boot foyer in a VM in your tab →**](https://trynix.dev/?path=/nix/store/rwqq5ai42fndm6m3l0va38cyy79ri87c-foyer-demo&cache=https://foyer.cachix.org%20foyer.cachix.org-1:xsCXcKqEATnlu%2BHrpG9CLZE6vaY0IS0kZLApVU3Q%2Fgk=)
+
+[trynix.dev](https://trynix.dev) fetches foyer's closure from
+[foyer.cachix.org](https://foyer.cachix.org) into an x86_64 Linux VM
+([QEMU compiled to WebAssembly](https://github.com/ktock/qemu-wasm)) running in
+your browser — nothing runs on a server. When the shell appears, type:
+
+```
+foyer-demo
+```
+
+That seeds a jj repo with a committed `.foyer/setup.sh`, runs
+`foyer create feature-x`, and shows the furnished workspace. `foyer` and `jj`
+are already on `PATH`, so you can keep going by hand afterwards.
+
 ## Use
 
 ```
