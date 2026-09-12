@@ -10,15 +10,17 @@ through on the way in.
 
 ## Try it in your browser
 
-<!-- The store path below is content-addressed to the current flake.lock.
-     A flake.lock bump (nixpkgs/erlang/…) changes the hash and breaks this
-     link. The Cachix workflow prints the current path on every push to main
-     ("Report demo store path"); update the ?path= here and re-push. Rebuild
+<!-- The store path below is content-addressed. foyer is built from a
+     filtered source (lib/, lib_prod/, mix.exs, mix.lock \u2014 see flake.nix
+     foyerSrc), so doc/CI/flake commits do NOT change it. It moves only when
+     the code or locked deps change, or on a flake.lock bump (nixpkgs/erlang).
+     When it moves: the Cachix workflow prints the current path on every push
+     to main ("Report demo store path"); update the ?path= here. Rebuild
      locally with:  nix build .#foyer-demo --print-out-paths
      The key's + and / are percent-encoded (%2B, %2F) because trynix parses
      the query with URLSearchParams, which would otherwise turn + into a
      space and drop the cache. -->
-[**Boot foyer in a VM in your tab →**](https://trynix.dev/?path=/nix/store/rwqq5ai42fndm6m3l0va38cyy79ri87c-foyer-demo&cache=https://foyer.cachix.org%20foyer.cachix.org-1:xsCXcKqEATnlu%2BHrpG9CLZE6vaY0IS0kZLApVU3Q%2Fgk=)
+[**Boot foyer in a VM in your tab →**](https://trynix.dev/?path=/nix/store/7xxwfxf87qgwgnrskvlb21l6sc0il9ms-foyer-demo&cache=https://foyer.cachix.org%20foyer.cachix.org-1:xsCXcKqEATnlu%2BHrpG9CLZE6vaY0IS0kZLApVU3Q%2Fgk=)
 
 [trynix.dev](https://trynix.dev) fetches foyer's closure from
 [foyer.cachix.org](https://foyer.cachix.org) into an x86_64 Linux VM

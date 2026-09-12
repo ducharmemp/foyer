@@ -46,11 +46,30 @@
           # above stays full; only what the shipped binary references at run time
           # is trimmed.
           runtimeErlang = pkgs.beam_minimal.interpreters.erlang;
+
+          # Build from a filtered source: only the files the release actually
+          # depends on. Editing README, .github, flake.nix, or tests then does
+          # NOT change foyer's store hash — so the trynix demo link (a hardcoded
+          # store path) survives doc and CI commits, and only moves when the
+          # code or locked deps change. Verified: a README-only edit no longer
+          # rebuilds foyer.
+          foyerSrc = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              ./lib
+              ./lib_prod
+              ./mix.exs
+              ./mix.lock
+            ];
+          };
         in
         beam.mixRelease {
           pname = "foyer";
-          version = self.shortRev or self.dirtyShortRev or "dev";
-          src = self;
+          # Fixed version (not the git rev) so the store hash depends only on
+          # the filtered source above, not on which commit built it. Keeps the
+          # trynix demo path stable across non-code commits.
+          version = "0.1.0";
+          src = foyerSrc;
           mixNixDeps = { };
 
           nativeBuildInputs = [
