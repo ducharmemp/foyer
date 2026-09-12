@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (for manual runs)"
+        required: false
+
+# GitHub Actions is only the orchestrator here. The actual build lives in
+# scripts/build-release.sh, which is runnable locally with the same result.
+# This workflow installs the toolchain that script needs, runs it, and uploads
+# the artifacts to a GitHub Release.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Toolchain for scripts/build-release.sh: Elixir/Erlang, Zig, xz. Burrito
+      # cross-compiles the Linux and macOS targets from a single Linux host.
+      #
+      # Burrito derives its ERTS download URL from the BUILD host's exact OTP
+      # version (it reads releases/<rel>/OTP_VERSION), then fetches a matching
+      # precompiled build from https://beam-machine-universal.b-cdn.net. That CDN
+      # publishes only specific versions: in the 28.2 line, exactly "28.2" exists
+      # (28.2.1 / 28.2.2 return 404), for all three targets foyer builds. So the
+      # OTP version is pinned exactly, with version-type: strict, so setup-beam
+      # installs 28.2 and not "the newest 28.2.x" — a mismatch would 404 the ERTS
+      # fetch. When bumping OTP, first confirm the target exists on that CDN.
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28.2"
+          version-type: strict
+          elixir-version: "1.18"
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Install xz
+        run: sudo apt-get update && sudo apt-get install -y xz-utils
+
+      - name: Build release binaries
+        run: scripts/build-release.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: foyer-binaries
+          path: dist/
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/foyer-*
+            dist/SHA256SUMS
+          generate_release_notes: true
+          body: |
+            Self-contained `foyer` binaries (BEAM runtime bundled — no Erlang
+            required). Download the one for your platform, `chmod +x`, run.
+
+            | file | platform |
+            | ---- | -------- |
+            | `foyer-linux_amd64` | Linux x86_64 |
+            | `foyer-linux_arm64` | Linux aarch64 |
+            | `foyer-macos_arm64` | macOS Apple Silicon |
+
+            Verify with `sha256sum -c SHA256SUMS`.
+
+            Nix / asdf users: `nix profile install github:ducharmemp/foyer`, or
+            build the escript with `nix build github:ducharmemp/foyer` (needs
+            Erlang at runtime).

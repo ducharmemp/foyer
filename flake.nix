@@ -42,10 +42,14 @@
           # mixRelease expects a Phoenix-style OTP release. foyer is a CLI, so we
           # override the build/install to produce an escript and wrap it so `jj`
           # (the runtime dependency it shells out to) is always on PATH.
+          #
+          # Built in the dev env on purpose: the escript needs no dependencies,
+          # while :prod pulls in Burrito (the release-only dep). Keeping this
+          # build dep-free is what lets mixNixDeps stay empty and hermetic.
           buildPhase = ''
             runHook preBuild
             export HOME="$TMPDIR"
-            export MIX_ENV=prod
+            export MIX_ENV=dev
             mix escript.build
             runHook postBuild
           '';
@@ -160,6 +164,8 @@
             checkPhase = ''
               export HOME="$TMPDIR"
               export MIX_ENV=test
+              # Elixir wants a UTF-8 locale or it warns and can misbehave.
+              export ELIXIR_ERL_OPTIONS="+fnu"
               mix test --color
             '';
             installPhase = "touch $out";
@@ -173,6 +179,10 @@
             (beamFor pkgs).erlang
             (beamFor pkgs).elixir-ls
             pkgs.jujutsu
+            # For scripts/build-release.sh (Burrito): zig cross-compiles the
+            # wrapper, xz packs the payload.
+            pkgs.zig
+            pkgs.xz
           ];
 
           # Keep mix's caches inside the project so a devShell never writes to

@@ -4,8 +4,10 @@
 /cover/
 /doc/
 *.ez
-foyer
-foyer-*.tar
+# The escript output at the repo root (mix escript.build writes ./foyer).
+# Anchored so it does not match lib/foyer, lib_prod/foyer, etc.
+/foyer
+/foyer-*.tar
 .nix-mix/
 .nix-hex/
 erl_crash.dump
