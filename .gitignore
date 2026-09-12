@@ -1,0 +1,15 @@
+# Elixir / Mix
+/_build/
+/deps/
+/cover/
+/doc/
+*.ez
+foyer
+foyer-*.tar
+.nix-mix/
+.nix-hex/
+erl_crash.dump
+
+# Nix
+/result
+/result-*
