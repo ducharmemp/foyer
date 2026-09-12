@@ -56,6 +56,6 @@ jobs:
 
             Verify with `sha256sum -c SHA256SUMS`.
 
-            Nix / asdf users: `nix profile install github:ducharmemp/foyer`, or
-            build the escript with `nix build github:ducharmemp/foyer` (needs
-            Erlang at runtime).
+            Nix users: `nix profile install github:ducharmemp/foyer` (installs
+            the escript, which needs Erlang at runtime), or add the home-manager
+            module `foyer.homeModules.foyer`.
