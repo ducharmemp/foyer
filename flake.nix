@@ -101,6 +101,21 @@
             runHook preInstall
             mkdir -p "$out/bin"
             install -Dm755 foyer "$out/libexec/foyer"
+
+            # mix escript.build writes `#!/usr/bin/env escript` as the shebang.
+            # That needs the file /usr/bin/env to exist at exec time — true on a
+            # normal distro, but NOT in a bare nix environment (a scratch/distroless
+            # container, or a trynix VM whose only non-/nix paths are what its init
+            # creates). Rewrite it to the absolute escript path so foyer runs with
+            # no /usr/bin/env present at all.
+            #
+            # An escript is a shebang line followed by a binary zip archive, so
+            # substituteInPlace refuses it ("Input null bytes"). Patch only line 1
+            # with sed, leaving the archive untouched.
+            sed -i '1s|^#!.*escript$|#!${runtimeErlang}/bin/escript|' "$out/libexec/foyer"
+            grep -q "^#!${runtimeErlang}/bin/escript\$" "$out/libexec/foyer" \
+              || { echo "shebang patch did not apply"; exit 1; }
+
             makeWrapper "$out/libexec/foyer" "$out/bin/foyer" \
               --prefix PATH : ${pkgs.lib.makeBinPath [ runtimeErlang pkgs.bash ]} \
               --set-default LC_ALL C.UTF-8

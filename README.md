@@ -20,12 +20,13 @@ through on the way in.
      The key's + and / are percent-encoded (%2B, %2F) because trynix parses
      the query with URLSearchParams, which would otherwise turn + into a
      space and drop the cache. -->
-[**Boot foyer in a VM in your tab →**](https://trynix.dev/?path=/nix/store/7xxwfxf87qgwgnrskvlb21l6sc0il9ms-foyer-demo&cache=https://foyer.cachix.org%20foyer.cachix.org-1:xsCXcKqEATnlu%2BHrpG9CLZE6vaY0IS0kZLApVU3Q%2Fgk=)
+[**Run foyer in your browser, no install →**](https://trynix.dev/?path=/nix/store/as5lasfkj7z5wbkz4rg7qmpll0x95p6k-foyer-demo&cache=https://foyer.cachix.org%20foyer.cachix.org-1:xsCXcKqEATnlu%2BHrpG9CLZE6vaY0IS0kZLApVU3Q%2Fgk=)
 
-[trynix.dev](https://trynix.dev) fetches foyer's closure from
-[foyer.cachix.org](https://foyer.cachix.org) into an x86_64 Linux VM
-([QEMU compiled to WebAssembly](https://github.com/ktock/qemu-wasm)) running in
-your browser — nothing runs on a server. When the shell appears, type:
+The link opens [trynix.dev](https://trynix.dev), which boots a small Linux VM
+in the browser tab — [QEMU compiled to
+WebAssembly](https://github.com/ktock/qemu-wasm), with foyer's closure fetched
+from [foyer.cachix.org](https://foyer.cachix.org). No server, no install. At the
+shell prompt, run:
 
 ```
 foyer-demo
