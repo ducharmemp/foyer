@@ -1,7 +1,7 @@
 defmodule Foyer.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.1.1"
 
   # The entryway that furnishes a jj workspace on arrival. A thin wrapper the
   # user invokes as `jj foyer …` (via a `util exec` alias) or directly as

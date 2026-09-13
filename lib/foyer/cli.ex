@@ -4,7 +4,7 @@ defmodule Foyer.CLI do
 
   Usage:
 
-      foyer create <name> [--to <dir>] [--rev <revset>] [-m <message>] [--no-furnish]
+      foyer create <name> [--to <dir>] [--rev <revset>] [--branch <name>] [--remote <r>] [-m <message>] [--no-furnish]
       foyer remove <name> [--to <dir>]
       foyer help
       foyer version
@@ -43,7 +43,7 @@ defmodule Foyer.CLI do
   defp create(args, runner) do
     {parsed, positional, invalid} =
       OptionParser.parse(args,
-        strict: [to: :string, rev: :string, message: :string, furnish: :boolean],
+        strict: [to: :string, rev: :string, branch: :string, remote: :string, message: :string, furnish: :boolean],
         aliases: [m: :message]
       )
 
@@ -64,18 +64,49 @@ defmodule Foyer.CLI do
   end
 
   defp do_create(runner, name, parsed) do
-    opts = %{
-      name: name,
-      destination: parsed[:to],
-      revision: parsed[:rev],
-      message: parsed[:message],
-      furnish: Keyword.get(parsed, :furnish, true),
-      repo_root: repo_root(runner)
-    }
+    case resolve_revision(parsed) do
+      {:ok, revision} ->
+        opts = %{
+          name: name,
+          destination: parsed[:to],
+          revision: revision,
+          message: parsed[:message],
+          furnish: Keyword.get(parsed, :furnish, true),
+          repo_root: repo_root(runner)
+        }
 
-    case Workspace.create(runner, opts) do
-      {:ok, result} -> {:ok, render_created(name, result)}
-      {:error, reason} -> {:error, reason}
+        case Workspace.create(runner, opts) do
+          {:ok, result} -> {:ok, render_created(name, result)}
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Resolve the working copy's parent revision from --rev / --branch / --remote.
+  # --branch <name> targets the bookmark <name>@<remote> (remote defaults to
+  # origin), assuming it is already present in the local repo. --branch and --rev
+  # both set the revision, so they are mutually exclusive. --remote is only
+  # meaningful with --branch. Returns {:ok, revision | nil} or {:error, message}.
+  defp resolve_revision(parsed) do
+    rev = parsed[:rev]
+    branch = parsed[:branch]
+    remote = parsed[:remote]
+
+    cond do
+      branch && rev ->
+        {:error, "--branch and --rev are mutually exclusive"}
+
+      remote && !branch ->
+        {:error, "--remote requires --branch"}
+
+      branch ->
+        {:ok, "#{branch}@#{remote || "origin"}"}
+
+      true ->
+        {:ok, rev}
     end
   end
 
@@ -157,7 +188,7 @@ defmodule Foyer.CLI do
     text |> String.split("\n") |> Enum.map_join("\n", &("  " <> &1))
   end
 
-  defp version, do: "0.1.0"
+  defp version, do: "0.1.1"
 
   defp usage do
     """
@@ -172,6 +203,8 @@ defmodule Foyer.CLI do
     create options:
       --to <dir>        explicit destination (default: sibling <repo>-<name>)
       --rev <revset>    parent revision(s) for the new working copy
+      --branch <name>   base on bookmark <name>@<remote> (mutually exclusive with --rev)
+      --remote <r>      remote for --branch (default: origin)
       -m, --message     description for the new working-copy commit
       --no-furnish      create the workspace but skip .foyer/setup.sh
 

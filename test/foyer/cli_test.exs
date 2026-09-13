@@ -32,7 +32,7 @@ defmodule Foyer.CLITest do
     end
 
     test "version prints the version" do
-      assert {:ok, "foyer 0.1.0"} = CLI.run(["version"], FakeRunner)
+      assert {:ok, "foyer 0.1.1"} = CLI.run(["version"], FakeRunner)
     end
   end
 
@@ -144,12 +144,65 @@ defmodule Foyer.CLITest do
       assert args == ["workspace", "add", "--name", "feat", "--revision", "@-", "--message", "hi", "/custom"]
     end
 
+    # The recorded `jj workspace add` call, or nil if it never ran.
+    defp add_call do
+      Enum.find(FakeRunner.calls(), fn {c, a, _} ->
+        c == "jj" and match?(["workspace", "add" | _], a)
+      end)
+    end
+
     test "--no-furnish skips the setup script" do
       System.put_env("JJ_WORKSPACE_ROOT", "/repo")
       FakeRunner.start(files: ["/repo-feat/.foyer/setup.sh"])
 
       assert {:ok, out} = CLI.run(["create", "feat", "--no-furnish"], FakeRunner)
       assert out =~ "skipped (--no-furnish)"
+    end
+  end
+
+  describe "create --branch" do
+    test "bases the working copy on <branch>@origin by default" do
+      System.put_env("JJ_WORKSPACE_ROOT", "/repo")
+      FakeRunner.start()
+
+      assert {:ok, _} = CLI.run(["create", "feat", "--branch", "topic"], FakeRunner)
+
+      assert {"jj", args, _} = add_call()
+      assert args == ["workspace", "add", "--name", "feat", "--revision", "topic@origin", "/repo-feat"]
+    end
+
+    test "--remote selects the remote for the bookmark" do
+      System.put_env("JJ_WORKSPACE_ROOT", "/repo")
+      FakeRunner.start()
+
+      assert {:ok, _} =
+               CLI.run(["create", "feat", "--branch", "topic", "--remote", "upstream"], FakeRunner)
+
+      assert {"jj", args, _} = add_call()
+      assert args == ["workspace", "add", "--name", "feat", "--revision", "topic@upstream", "/repo-feat"]
+    end
+
+    test "--branch and --rev are mutually exclusive" do
+      System.put_env("JJ_WORKSPACE_ROOT", "/repo")
+      FakeRunner.start()
+
+      assert {:error, out} =
+               CLI.run(["create", "feat", "--branch", "topic", "--rev", "@-"], FakeRunner)
+
+      assert out =~ "--branch and --rev are mutually exclusive"
+      # nothing ran: the error is reached before jj is called
+      assert FakeRunner.calls() == []
+    end
+
+    test "--remote without --branch is rejected" do
+      System.put_env("JJ_WORKSPACE_ROOT", "/repo")
+      FakeRunner.start()
+
+      assert {:error, out} =
+               CLI.run(["create", "feat", "--remote", "upstream"], FakeRunner)
+
+      assert out =~ "--remote requires --branch"
+      assert FakeRunner.calls() == []
     end
   end
 

@@ -41,12 +41,14 @@ foyer remove <name> [--to <dir>]
 
 `create` options:
 
-| option           | effect                                          |
-| ---------------- | ----------------------------------------------- |
-| `--to <dir>`     | destination (default: sibling `<repo>-<name>`)  |
-| `--rev <revset>` | parent revision(s) for the new working copy     |
-| `-m <message>`   | description for the new working-copy commit     |
-| `--no-furnish`   | create the workspace, skip `.foyer/setup.sh`    |
+| option            | effect                                                |
+| ----------------- | ----------------------------------------------------- |
+| `--to <dir>`      | destination (default: sibling `<repo>-<name>`)        |
+| `--rev <revset>`  | parent revision(s) for the new working copy           |
+| `--branch <name>` | base on bookmark `<name>@<remote>` (excludes `--rev`) |
+| `--remote <r>`    | remote for `--branch` (default: `origin`)             |
+| `-m <message>`    | description for the new working-copy commit           |
+| `--no-furnish`    | create the workspace, skip `.foyer/setup.sh`          |
 
 Run either directly, or as `jj foyer create <name>` — the home-manager module
 installs that alias.
