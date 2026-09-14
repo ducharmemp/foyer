@@ -17,7 +17,7 @@ If you like jj workspaces and work in neovim, try [open-floorplan.nvim](https://
      The key's + and / are percent-encoded (%2B, %2F) because trynix parses
      the query with URLSearchParams, which would otherwise turn + into a
      space and drop the cache. -->
-[**Run foyer in your browser**](https://trynix.dev/?path=/nix/store/as5lasfkj7z5wbkz4rg7qmpll0x95p6k-foyer-demo&cache=https://foyer.cachix.org%20foyer.cachix.org-1:xsCXcKqEATnlu%2BHrpG9CLZE6vaY0IS0kZLApVU3Q%2Fgk=)
+[**Run foyer in your browser**](https://trynix.dev/?path=/nix/store/bqwh86l5vqrb1wlhgr37awfjs62n5d4i-foyer-demo&cache=https://foyer.cachix.org%20foyer.cachix.org-1:xsCXcKqEATnlu%2BHrpG9CLZE6vaY0IS0kZLApVU3Q%2Fgk=)
 
 The link opens [trynix.dev](https://trynix.dev), which boots a small Linux VM
 in the browser tab — [QEMU compiled to

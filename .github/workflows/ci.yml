@@ -22,3 +22,24 @@ jobs:
         run: nix flake check -L
       - name: Build escript
         run: nix build -L .#foyer
+
+  demo-link:
+    # Fail if the trynix demo link in README.md points at a stale store path.
+    # The path moves when foyer's code, mix.lock, or flake.lock change. This
+    # job builds foyer-demo, reads its store path, and checks that README.md
+    # names it. A red check tells the PR author to update README.md:20.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - name: Check README demo store path
+        run: |
+          set -euo pipefail
+          path="$(nix build --no-link --print-out-paths .#foyer-demo)"
+          echo "current foyer-demo store path: $path"
+          if grep -qF "$path" README.md; then
+            echo "README.md demo link is current."
+          else
+            echo "::error file=README.md,line=20::demo link is stale; update the ?path= to $path"
+            exit 1
+          fi
