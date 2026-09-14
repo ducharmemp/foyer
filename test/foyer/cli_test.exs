@@ -5,12 +5,24 @@ defmodule Foyer.CLITest do
   alias Foyer.FakeRunner
 
   setup do
-    prev = System.get_env("JJ_WORKSPACE_ROOT")
+    saved =
+      Map.new(["JJ_WORKSPACE_ROOT", "FOYER_CONFIG_HOME", "XDG_CONFIG_HOME"], fn k ->
+        {k, System.get_env(k)}
+      end)
+
+    # Isolate every test from the environment's real config: no hooks unless a
+    # test opts in with FOYER_CONFIG_HOME. XDG_CONFIG_HOME is cleared so it can
+    # never point config_root/0 at the developer's real hooks.
     System.delete_env("JJ_WORKSPACE_ROOT")
+    System.delete_env("FOYER_CONFIG_HOME")
+    System.delete_env("XDG_CONFIG_HOME")
 
     on_exit(fn ->
       FakeRunner.stop()
-      if prev, do: System.put_env("JJ_WORKSPACE_ROOT", prev), else: System.delete_env("JJ_WORKSPACE_ROOT")
+
+      for {k, v} <- saved do
+        if v, do: System.put_env(k, v), else: System.delete_env(k)
+      end
     end)
 
     :ok
@@ -32,7 +44,7 @@ defmodule Foyer.CLITest do
     end
 
     test "version prints the version" do
-      assert {:ok, "foyer 0.1.1"} = CLI.run(["version"], FakeRunner)
+      assert {:ok, "foyer 0.2.0"} = CLI.run(["version"], FakeRunner)
     end
   end
 
@@ -157,6 +169,67 @@ defmodule Foyer.CLITest do
 
       assert {:ok, out} = CLI.run(["create", "feat", "--no-furnish"], FakeRunner)
       assert out =~ "skipped (--no-furnish)"
+    end
+  end
+
+  describe "create global hooks rendering" do
+    test "reports a successful create hook by basename" do
+      System.put_env("JJ_WORKSPACE_ROOT", "/repo")
+      System.put_env("FOYER_CONFIG_HOME", "/cfg")
+      hook = "/cfg/hooks/create/10-direnv"
+
+      FakeRunner.start(
+        executables: %{"/cfg/hooks/create" => [hook]},
+        results: %{{"bash", [hook]} => {:ok, ""}}
+      )
+
+      assert {:ok, out} = CLI.run(["create", "feat"], FakeRunner)
+      assert out =~ "hook: ran 10-direnv"
+
+      # the hook ran in the new workspace directory
+      assert {"bash", [^hook], opts} = List.last(FakeRunner.calls())
+      assert opts[:cd] == "/repo-feat"
+      assert opts[:env] == [{"JJ_WORKSPACE_ROOT", "/repo-feat"}]
+    end
+
+    test "surfaces a failed create hook as a non-fatal warning" do
+      System.put_env("JJ_WORKSPACE_ROOT", "/repo")
+      System.put_env("FOYER_CONFIG_HOME", "/cfg")
+      hook = "/cfg/hooks/create/10-direnv"
+
+      FakeRunner.start(
+        executables: %{"/cfg/hooks/create" => [hook]},
+        results: %{{"bash", [hook]} => {:error, {1, "kaboom"}}}
+      )
+
+      assert {:ok, out} = CLI.run(["create", "feat"], FakeRunner)
+      assert out =~ "WARNING: hook 10-direnv failed"
+      assert out =~ "kaboom"
+    end
+  end
+
+  describe "remove global hooks rendering" do
+    test "reports a successful remove hook, run before teardown" do
+      System.put_env("JJ_WORKSPACE_ROOT", "/repo")
+      System.put_env("FOYER_CONFIG_HOME", "/cfg")
+      hook = "/cfg/hooks/remove/10-cleanup"
+      teardown = "/repo-feat/.foyer/teardown.sh"
+
+      FakeRunner.start(
+        files: [teardown],
+        executables: %{"/cfg/hooks/remove" => [hook]},
+        results: %{{"bash", [hook]} => {:ok, ""}, {"bash", [teardown]} => {:ok, ""}}
+      )
+
+      assert {:ok, out} = CLI.run(["remove", "feat"], FakeRunner)
+      assert out =~ "hook: ran 10-cleanup"
+
+      # order: forget, hook, teardown
+      assert [
+               {"jj", ["workspace", "forget", "feat"], _},
+               {"bash", [^hook], _},
+               {"bash", [^teardown], _}
+             ] = FakeRunner.calls()
     end
   end
 

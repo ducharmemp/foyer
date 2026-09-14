@@ -246,6 +246,71 @@
                 Set false to install only the CLI and add the alias yourself.
               '';
             };
+
+            hooks =
+              let
+                # One hook is a script foyer runs on every workspace. Give it
+                # EITHER `text` (an inline body) OR `source` (a path to an
+                # existing script file) — exactly one, enforced by an assertion
+                # below. `name` fixes the file name (and therefore the run
+                # order, which is by name); it defaults to the list index, so
+                # unnamed hooks run in the order written.
+                hookType = lib.types.submodule {
+                  options = {
+                    name = lib.mkOption {
+                      type = lib.types.nullOr lib.types.str;
+                      default = null;
+                      description = "File-name suffix for this hook (run order is by name). Defaults to the list index.";
+                    };
+                    text = lib.mkOption {
+                      type = lib.types.nullOr lib.types.lines;
+                      default = null;
+                      description = ''
+                        The hook script body, inline. A `#!/usr/bin/env bash`
+                        shebang is added if the text has none. Mutually exclusive
+                        with `source`.
+                      '';
+                    };
+                    source = lib.mkOption {
+                      type = lib.types.nullOr lib.types.path;
+                      default = null;
+                      description = ''
+                        Path to an existing script file to install as the hook,
+                        verbatim (no shebang is added). Use it to reference a
+                        script you already keep on disk, or one another Nix
+                        expression produces (for example `pkgs.writeShellScript`).
+                        Mutually exclusive with `text`.
+                      '';
+                    };
+                  };
+                };
+              in
+              {
+                create = lib.mkOption {
+                  type = lib.types.listOf hookType;
+                  default = [ ];
+                  example = lib.literalExpression ''[ { text = "direnv allow"; } { source = ./my-hook.sh; } ]'';
+                  description = ''
+                    User-global hooks run on every `foyer create`, after the
+                    project's `.foyer/setup.sh`. Each runs in the new workspace
+                    with `JJ_WORKSPACE_ROOT` set. A failing hook is a warning,
+                    never fatal.
+                  '';
+                };
+
+                remove = lib.mkOption {
+                  type = lib.types.listOf hookType;
+                  default = [ ];
+                  example = lib.literalExpression ''[ { text = "my-cleanup"; } { source = ./teardown.sh; } ]'';
+                  description = ''
+                    User-global hooks run on every `foyer remove`, before the
+                    project's `.foyer/teardown.sh` (so a self-deleting teardown
+                    never strands them). Each runs in the workspace with
+                    `JJ_WORKSPACE_ROOT` set. A failing hook is a warning, never
+                    fatal.
+                  '';
+                };
+              };
           };
 
           config = lib.mkIf cfg.enable {
@@ -259,6 +324,69 @@
               "--"
               "${cfg.package}/bin/foyer"
             ];
+
+            # Write each configured hook to an executable script under
+            # $XDG_CONFIG_HOME/foyer/hooks/<event>/, which is where foyer's
+            # Foyer.Hooks looks. The file name is `<NN>-<name>`, where NN is the
+            # list index, zero-padded to a width that holds the whole list, so
+            # foyer's file-name sort matches the list order for any hook count.
+            # foyer runs every executable there in file-name order.
+            #
+            # A hook is EITHER inline (`text`, shebang added when absent) or a
+            # file reference (`source`, installed verbatim). The mutual
+            # exclusion is asserted below, so here a set `source` decides the
+            # form and `text` is the fallback.
+            xdg.configFile = lib.mkMerge (
+              lib.concatLists (
+                lib.mapAttrsToList (
+                  event: hooks:
+                  let
+                    # Pad wide enough that lexicographic sort equals numeric
+                    # order. Without this, "100-x" sorts before "20-x" ("-" is
+                    # below "0"), which would reorder a list of 10+ hooks.
+                    width = builtins.stringLength (toString (builtins.length hooks * 10));
+                  in
+                  lib.imap0 (
+                    i: hook:
+                    let
+                      idx = lib.fixedWidthNumber width (i * 10 + 10);
+                      fname = "${idx}-${if hook.name != null then hook.name else toString i}";
+                      hasShebang = hook.text != null && lib.hasPrefix "#!" hook.text;
+                      # A `source` hook is installed verbatim; a `text` hook gets
+                      # a bash shebang when it has none.
+                      content =
+                        if hook.source != null then
+                          { source = hook.source; }
+                        else
+                          { text = if hasShebang then hook.text else "#!/usr/bin/env bash\n${hook.text}"; };
+                    in
+                    {
+                      "foyer/hooks/${event}/${fname}" = content // { executable = true; };
+                    }
+                  ) hooks
+                ) { create = cfg.hooks.create; remove = cfg.hooks.remove; }
+              )
+            );
+
+            # A hook must set exactly one of `text` / `source`. Neither leaves
+            # nothing to install; both is ambiguous. Catch it at build time with
+            # a clear message rather than writing a surprising file.
+            assertions = lib.concatLists (
+              lib.mapAttrsToList (
+                event: hooks:
+                lib.imap0 (
+                  i: hook:
+                  let
+                    label = if hook.name != null then hook.name else toString i;
+                    setCount = (if hook.text != null then 1 else 0) + (if hook.source != null then 1 else 0);
+                  in
+                  {
+                    assertion = setCount == 1;
+                    message = "programs.foyer.hooks.${event} hook '${label}' must set exactly one of `text` or `source` (it sets ${toString setCount}).";
+                  }
+                ) hooks
+              ) { create = cfg.hooks.create; remove = cfg.hooks.remove; }
+            );
           };
         };
 

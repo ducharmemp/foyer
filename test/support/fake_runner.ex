@@ -8,6 +8,9 @@ defmodule Foyer.FakeRunner do
   #   Foyer.FakeRunner.start(
   #     dirs: ["/repo-existing"],           # paths dir?/1 returns true for
   #     files: ["/repo-x/.foyer/setup.sh"], # paths file?/1 returns true for
+  #     executables: %{                      # dir => list_executables/1 result
+  #       "/cfg/hooks/create" => ["/cfg/hooks/create/10-a", "/cfg/hooks/create/20-b"]
+  #     },
   #     results: %{                          # {command, args} => run/3 result
   #       {"jj", ["workspace", "root"]} => {:ok, "/repo\n"},
   #       {"bash", ["/repo-x/.foyer/setup.sh"]} => {:error, {1, "boom"}}
@@ -28,6 +31,7 @@ defmodule Foyer.FakeRunner do
     state = %{
       dirs: MapSet.new(config[:dirs] || []),
       files: MapSet.new(config[:files] || []),
+      executables: config[:executables] || %{},
       results: config[:results] || %{},
       default: Keyword.get(config, :default, {:ok, ""}),
       calls: []
@@ -71,5 +75,10 @@ defmodule Foyer.FakeRunner do
   @impl true
   def file?(path) do
     Agent.get(@agent, fn s -> MapSet.member?(s.files, path) end)
+  end
+
+  @impl true
+  def list_executables(dir) do
+    Agent.get(@agent, fn s -> Map.get(s.executables, dir, []) end)
   end
 end

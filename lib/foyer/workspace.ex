@@ -15,8 +15,11 @@ defmodule Foyer.Workspace do
           optional(:revision) => String.t() | nil,
           optional(:message) => String.t() | nil,
           optional(:repo_root) => String.t() | nil,
-          optional(:furnish) => boolean()
+          optional(:furnish) => boolean(),
+          optional(:hooks_dir) => String.t() | nil
         }
+
+  alias Foyer.Hooks
 
   @setup_rel ".foyer/setup.sh"
   @teardown_rel ".foyer/teardown.sh"
@@ -25,9 +28,15 @@ defmodule Foyer.Workspace do
   Create a workspace and furnish it.
 
   `runner` is a module implementing `Foyer.Runner`. Returns
-  `{:ok, %{destination: dest, furnish: status}}` or `{:error, reason}`. The
-  furnish status is `:ok`, `:none`, `:skipped`, or `{:failed, message}`, and
-  reason is a human-readable string.
+  `{:ok, %{destination: dest, furnish: status, hooks: results}}` or
+  `{:error, reason}`. The furnish status is `:ok`, `:none`, `:skipped`, or
+  `{:failed, message}`; `hooks` is the list of `{path, status}` from the global
+  create hooks (see `Foyer.Hooks`), empty when none ran; reason is a
+  human-readable string.
+
+  The global create hooks run AFTER the project `.foyer/setup.sh`, so the
+  project furnishes the room first and the user's hooks act on the finished
+  workspace.
   """
   @spec create(module(), opts()) :: {:ok, map()} | {:error, String.t()}
   def create(runner, %{name: name} = opts) when is_binary(name) and name != "" do
@@ -43,7 +52,8 @@ defmodule Foyer.Workspace do
       true ->
         with :ok <- add_workspace(runner, name, destination, opts) do
           furnish = furnish(runner, destination, opts)
-          {:ok, %{destination: destination, furnish: furnish}}
+          hooks = Hooks.run(runner, Map.get(opts, :hooks_dir), destination)
+          {:ok, %{destination: destination, furnish: furnish, hooks: hooks}}
         end
     end
   end
@@ -60,17 +70,23 @@ defmodule Foyer.Workspace do
   jj tracking a path that is gone. foyer itself never deletes files; whether the
   directory survives is the script's decision.
 
-  Returns `{:ok, %{name: name, directory: dir, teardown: status}}` or
-  `{:error, reason}`. teardown status is `:ok`, `:none`, `:skipped`, or
-  `{:failed, message}`.
+  The global remove hooks run BEFORE the project `.foyer/teardown.sh`. A
+  teardown script may delete its own directory (self-removal); running the hooks
+  first guarantees they see a directory that still exists.
+
+  Returns `{:ok, %{name: name, directory: dir, hooks: results, teardown: status}}`
+  or `{:error, reason}`. teardown status is `:ok`, `:none`, `:skipped`, or
+  `{:failed, message}`; `hooks` is the list of `{path, status}` from the global
+  remove hooks (see `Foyer.Hooks`), empty when none ran.
   """
   @spec remove(module(), opts()) :: {:ok, map()} | {:error, String.t()}
   def remove(runner, %{name: name} = opts) when is_binary(name) and name != "" do
     directory = resolve_destination(opts)
 
     with :ok <- forget_workspace(runner, name) do
+      hooks = Hooks.run(runner, Map.get(opts, :hooks_dir), directory)
       teardown = teardown(runner, directory, opts)
-      {:ok, %{name: name, directory: directory, teardown: teardown}}
+      {:ok, %{name: name, directory: directory, hooks: hooks, teardown: teardown}}
     end
   end
 

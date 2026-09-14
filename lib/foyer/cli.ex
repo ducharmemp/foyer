@@ -15,6 +15,7 @@ defmodule Foyer.CLI do
   locate the repo; outside the alias it falls back to `jj workspace root`.
   """
 
+  alias Foyer.Hooks
   alias Foyer.Workspace
 
   @runner Foyer.Runner.System
@@ -72,7 +73,8 @@ defmodule Foyer.CLI do
           revision: revision,
           message: parsed[:message],
           furnish: Keyword.get(parsed, :furnish, true),
-          repo_root: repo_root(runner)
+          repo_root: repo_root(runner),
+          hooks_dir: Hooks.dir(Hooks.config_root(), :create)
         }
 
         case Workspace.create(runner, opts) do
@@ -134,7 +136,8 @@ defmodule Foyer.CLI do
     opts = %{
       name: name,
       destination: parsed[:to],
-      repo_root: repo_root(runner)
+      repo_root: repo_root(runner),
+      hooks_dir: Hooks.dir(Hooks.config_root(), :remove)
     }
 
     case Workspace.remove(runner, opts) do
@@ -159,25 +162,45 @@ defmodule Foyer.CLI do
     end
   end
 
-  defp render_created(name, %{destination: dest, furnish: furnish}) do
+  defp render_created(name, %{destination: dest, furnish: furnish} = result) do
     base = "created workspace '#{name}' at #{dest}"
 
-    case furnish do
-      :ok -> base <> "\nfurnished: ran .foyer/setup.sh"
-      :none -> base <> "\nfurnished: nothing to do (no .foyer/setup.sh)"
-      :skipped -> base <> "\nfurnished: skipped (--no-furnish)"
-      {:failed, msg} -> base <> "\nWARNING: .foyer/setup.sh failed:\n#{indent(msg)}"
-    end
+    furnished =
+      case furnish do
+        :ok -> base <> "\nfurnished: ran .foyer/setup.sh"
+        :none -> base <> "\nfurnished: nothing to do (no .foyer/setup.sh)"
+        :skipped -> base <> "\nfurnished: skipped (--no-furnish)"
+        {:failed, msg} -> base <> "\nWARNING: .foyer/setup.sh failed:\n#{indent(msg)}"
+      end
+
+    furnished <> render_hooks(Map.get(result, :hooks, []))
   end
 
-  defp render_removed(name, %{teardown: teardown}) do
+  defp render_removed(name, %{teardown: teardown} = result) do
     base = "forgot workspace '#{name}'"
 
-    case teardown do
-      :ok -> base <> "\nteardown: ran .foyer/teardown.sh"
-      :none -> base <> "\nteardown: nothing to do (no .foyer/teardown.sh)"
-      {:failed, msg} -> base <> "\nWARNING: .foyer/teardown.sh failed:\n#{indent(msg)}"
-    end
+    # teardown has three states, not four: remove has no `--no-furnish`
+    # equivalent, so `:skipped` never occurs here.
+    torn_down =
+      case teardown do
+        :ok -> base <> "\nteardown: ran .foyer/teardown.sh"
+        :none -> base <> "\nteardown: nothing to do (no .foyer/teardown.sh)"
+        {:failed, msg} -> base <> "\nWARNING: .foyer/teardown.sh failed:\n#{indent(msg)}"
+      end
+
+    torn_down <> render_hooks(Map.get(result, :hooks, []))
+  end
+
+  # Render the user-global hook results (see Foyer.Hooks). Each hook is one
+  # line: a success is reported by name, a failure as a non-fatal WARNING with
+  # its output. Nothing is rendered when no hooks ran.
+  defp render_hooks([]), do: ""
+
+  defp render_hooks(hooks) do
+    Enum.map_join(hooks, "", fn
+      {path, :ok} -> "\nhook: ran #{Path.basename(path)}"
+      {path, {:failed, msg}} -> "\nWARNING: hook #{Path.basename(path)} failed:\n#{indent(msg)}"
+    end)
   end
 
   defp format_invalid(invalid) do
@@ -188,7 +211,7 @@ defmodule Foyer.CLI do
     text |> String.split("\n") |> Enum.map_join("\n", &("  " <> &1))
   end
 
-  defp version, do: "0.1.1"
+  defp version, do: "0.2.0"
 
   defp usage do
     """
@@ -214,6 +237,12 @@ defmodule Foyer.CLI do
     remove runs `jj workspace forget <name>`, then runs .foyer/teardown.sh (if
     committed) in the now-untracked directory with JJ_WORKSPACE_ROOT set. foyer
     never deletes files; a teardown script can remove its own directory.
+
+    User-global hooks run on EVERY workspace, independent of the project. Drop
+    executable scripts in $XDG_CONFIG_HOME/foyer/hooks/create/ and .../remove/
+    (or configure programs.foyer.hooks in home-manager). foyer runs each with
+    JJ_WORKSPACE_ROOT set: create hooks after .foyer/setup.sh, remove hooks
+    before .foyer/teardown.sh. A failing hook is a warning, never fatal.
     """
   end
 

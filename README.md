@@ -17,7 +17,7 @@ If you like jj workspaces and work in neovim, try [open-floorplan.nvim](https://
      The key's + and / are percent-encoded (%2B, %2F) because trynix parses
      the query with URLSearchParams, which would otherwise turn + into a
      space and drop the cache. -->
-[**Run foyer in your browser**](https://trynix.dev/?path=/nix/store/bqwh86l5vqrb1wlhgr37awfjs62n5d4i-foyer-demo&cache=https://foyer.cachix.org%20foyer.cachix.org-1:xsCXcKqEATnlu%2BHrpG9CLZE6vaY0IS0kZLApVU3Q%2Fgk=)
+[**Run foyer in your browser**](https://trynix.dev/?path=/nix/store/v5h7y745nphzyn2360awrbm5453fwhwb-foyer-demo&cache=https://foyer.cachix.org%20foyer.cachix.org-1:xsCXcKqEATnlu%2BHrpG9CLZE6vaY0IS0kZLApVU3Q%2Fgk=)
 
 The link opens [trynix.dev](https://trynix.dev), which boots a small Linux VM
 in the browser tab — [QEMU compiled to
@@ -86,6 +86,54 @@ rm -rf "$JJ_WORKSPACE_ROOT"    # self-removal, if you want it
 
 foyer itself never deletes files.
 
+## User-global hooks
+
+The setup and teardown scripts are committed to a repo, so everyone who uses
+that repo shares them. Hooks are the reverse: per-user scripts that run on
+**every** workspace, whatever the project. Drop executable scripts in
+
+```
+$XDG_CONFIG_HOME/foyer/hooks/create/    # run on every `foyer create`
+$XDG_CONFIG_HOME/foyer/hooks/remove/    # run on every `foyer remove`
+```
+
+foyer runs every executable in the relevant directory, in file-name order,
+with `cwd` set to the workspace and `JJ_WORKSPACE_ROOT` exported — the same
+environment the project script gets. Order relative to the project script:
+
+- `create` — project `.foyer/setup.sh` first, then the create hooks.
+- `remove` — the remove hooks first, then project `.foyer/teardown.sh`.
+
+The remove order is deliberate: a teardown may delete its own directory, so
+the hooks run first, while the directory still exists. A failing hook is
+reported as a warning; it never fails the command.
+
+With home-manager, configure them in Nix instead of writing files by hand:
+
+```nix
+programs.foyer.hooks.create = [
+  { text = "direnv allow"; }              # a bash snippet; shebang added for you
+  { source = ./my-hook.sh; }              # a file you already keep on disk
+  { name = "notify"; text = ''
+      #!/usr/bin/env bash
+      notify-send "furnished $(basename "$JJ_WORKSPACE_ROOT")"
+    ''; }
+];
+programs.foyer.hooks.remove = [
+  { text = "my-cleanup"; }
+];
+```
+
+Each entry becomes a numbered executable under `foyer/hooks/<event>/`
+(`10-…`, `20-…`, in list order). `name` fixes the file-name suffix; omit it
+and the list index is used.
+
+A hook is **either** `text` (an inline body — a `#!/usr/bin/env bash` shebang
+is added when absent) **or** `source` (a path to an existing script, installed
+verbatim). `source` takes any Nix path: a file in your config, or one another
+expression produces (for example `pkgs.writeShellScript`). Setting both, or
+neither, is a build-time error.
+
 ## Install
 
 ### Home-manager (Nix)
@@ -99,7 +147,8 @@ foyer itself never deletes files.
 
 `programs.foyer.aliasName` renames the jj alias (default `"foyer"`).
 `programs.foyer.installJjAlias = false` installs the CLI without touching your
-jj config.
+jj config. `programs.foyer.hooks.{create,remove}` install user-global hook
+scripts (see [User-global hooks](#user-global-hooks)).
 
 ### Download a binary
 

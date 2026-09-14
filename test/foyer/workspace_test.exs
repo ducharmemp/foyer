@@ -144,6 +144,86 @@ defmodule Foyer.WorkspaceTest do
     end
   end
 
+  describe "create/2 global hooks" do
+    test "runs create hooks AFTER the project setup script, with cwd and env set" do
+      setup_script = "/dest/.foyer/setup.sh"
+      hook = "/cfg/hooks/create/10-a"
+
+      FakeRunner.start(
+        files: [setup_script],
+        executables: %{"/cfg/hooks/create" => [hook]},
+        results: %{{"bash", [setup_script]} => {:ok, ""}, {"bash", [hook]} => {:ok, ""}}
+      )
+
+      assert {:ok, %{furnish: :ok, hooks: [{^hook, :ok}]}} =
+               Workspace.create(FakeRunner, %{
+                 name: "feat",
+                 destination: "/dest",
+                 hooks_dir: "/cfg/hooks/create"
+               })
+
+      # order: jj add, then the project setup.sh, then the global hook
+      calls = FakeRunner.calls()
+
+      assert [
+               {"jj", ["workspace", "add" | _], _},
+               {"bash", [^setup_script], _},
+               {"bash", [^hook], hook_opts}
+             ] = calls
+
+      assert hook_opts[:cd] == "/dest"
+      assert hook_opts[:env] == [{"JJ_WORKSPACE_ROOT", "/dest"}]
+    end
+
+    test "runs multiple create hooks in listed order" do
+      dir = "/cfg/hooks/create"
+      a = "#{dir}/10-a"
+      b = "#{dir}/20-b"
+
+      FakeRunner.start(
+        executables: %{dir => [a, b]},
+        results: %{{"bash", [a]} => {:ok, ""}, {"bash", [b]} => {:ok, ""}}
+      )
+
+      assert {:ok, %{hooks: [{^a, :ok}, {^b, :ok}]}} =
+               Workspace.create(FakeRunner, %{
+                 name: "feat",
+                 destination: "/dest",
+                 hooks_dir: dir
+               })
+
+      # the two hooks run in listed order, after the jj add
+      assert [
+               {"jj", ["workspace", "add" | _], _},
+               {"bash", [^a], _},
+               {"bash", [^b], _}
+             ] = FakeRunner.calls()
+    end
+
+    test "a failing create hook is reported but the create still succeeds" do
+      hook = "/cfg/hooks/create/10-a"
+
+      FakeRunner.start(
+        executables: %{"/cfg/hooks/create" => [hook]},
+        results: %{{"bash", [hook]} => {:error, {1, "nope\n"}}}
+      )
+
+      assert {:ok, %{hooks: [{^hook, {:failed, "nope"}}]}} =
+               Workspace.create(FakeRunner, %{
+                 name: "feat",
+                 destination: "/dest",
+                 hooks_dir: "/cfg/hooks/create"
+               })
+    end
+
+    test "hooks is empty when no hooks_dir is given" do
+      FakeRunner.start()
+
+      assert {:ok, %{hooks: []}} =
+               Workspace.create(FakeRunner, %{name: "feat", destination: "/dest"})
+    end
+  end
+
   describe "create/2 jj failure" do
     test "maps a non-zero jj exit to an error and does not furnish" do
       FakeRunner.start(
@@ -237,6 +317,62 @@ defmodule Foyer.WorkspaceTest do
       )
 
       assert {:ok, %{name: "feat", teardown: {:failed, "boom"}}} =
+               Workspace.remove(FakeRunner, %{name: "feat", destination: "/dest"})
+    end
+  end
+
+  describe "remove/2 global hooks" do
+    test "runs remove hooks BEFORE the project teardown script, with cwd and env set" do
+      teardown_script = "/dest/.foyer/teardown.sh"
+      hook = "/cfg/hooks/remove/10-a"
+
+      FakeRunner.start(
+        files: [teardown_script],
+        executables: %{"/cfg/hooks/remove" => [hook]},
+        results: %{{"bash", [teardown_script]} => {:ok, ""}, {"bash", [hook]} => {:ok, ""}}
+      )
+
+      assert {:ok, %{teardown: :ok, hooks: [{^hook, :ok}]}} =
+               Workspace.remove(FakeRunner, %{
+                 name: "feat",
+                 destination: "/dest",
+                 hooks_dir: "/cfg/hooks/remove"
+               })
+
+      # order is load-bearing: jj forget, then the global hook, THEN teardown.
+      # A teardown may self-delete the directory, so hooks run before it.
+      calls = FakeRunner.calls()
+
+      assert [
+               {"jj", ["workspace", "forget", "feat"], _},
+               {"bash", [^hook], hook_opts},
+               {"bash", [^teardown_script], _}
+             ] = calls
+
+      assert hook_opts[:cd] == "/dest"
+      assert hook_opts[:env] == [{"JJ_WORKSPACE_ROOT", "/dest"}]
+    end
+
+    test "a failing remove hook is reported but the remove still succeeds" do
+      hook = "/cfg/hooks/remove/10-a"
+
+      FakeRunner.start(
+        executables: %{"/cfg/hooks/remove" => [hook]},
+        results: %{{"bash", [hook]} => {:error, {1, "nope\n"}}}
+      )
+
+      assert {:ok, %{hooks: [{^hook, {:failed, "nope"}}]}} =
+               Workspace.remove(FakeRunner, %{
+                 name: "feat",
+                 destination: "/dest",
+                 hooks_dir: "/cfg/hooks/remove"
+               })
+    end
+
+    test "hooks is empty when no hooks_dir is given" do
+      FakeRunner.start()
+
+      assert {:ok, %{hooks: []}} =
                Workspace.remove(FakeRunner, %{name: "feat", destination: "/dest"})
     end
   end
